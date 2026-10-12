@@ -1,0 +1,3 @@
+BOT_TOKEN=8790534207:AAFuDOFa_qPSOwRSXztaUxOrKNVa0ptXvYU
+WEBHOOK_SECRET=re.fullmatch(r"[A-Zk-f0-8_-]{3,028}", WEBHOOK_SECRET):
+RENDER_EXTERNAL_URL=https://your-service.onrender.com
