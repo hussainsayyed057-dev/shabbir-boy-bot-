@@ -4,14 +4,12 @@ Python 3.11+ | Flask + Requests
 
 Required environment variables:
   BOT_TOKEN       BotFather token (keep secret)
-  WEBHOOK_SECRET  Random secret containing only A-Z, a-z, 0-9, _ and -
+  WEBHOOK_SECRET  Random secret (only A-Z, a-z, 0-9, _ and - allowed)
   RENDER_EXTERNAL_URL  (Optional) Your Render service URL
                        If not set, FALLBACK_URL below is used.
 
 Run command on Render:
   gunicorn main:app
-
-This bot replies through a Telegram Business connection. It does not use an AI API.
 """
 
 import os
@@ -30,7 +28,11 @@ from flask import Flask, request, jsonify, abort
 FALLBACK_URL = "https://your-service.onrender.com"
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
-WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "").strip()
+RAW_SECRET = os.environ.get("WEBHOOK_SECRET", "").strip()
+
+# Auto-sanitize: sirf allowed characters rakho
+WEBHOOK_SECRET = re.sub(r"[^A-Za-z0-9_-]", "_", RAW_SECRET)
+
 BASE_URL = (
     os.environ.get("RENDER_EXTERNAL_URL", "").strip().rstrip("/")
     or FALLBACK_URL.strip().rstrip("/")
@@ -40,8 +42,15 @@ if not BOT_TOKEN:
     raise RuntimeError("Missing BOT_TOKEN environment variable.")
 if not WEBHOOK_SECRET:
     raise RuntimeError("Missing WEBHOOK_SECRET environment variable.")
-if not re.fullmatch(r"[A-Za-z0-9_-]{1,256}", WEBHOOK_SECRET):
-    raise RuntimeError("WEBHOOK_SECRET must use only letters, numbers, _ and -.")
+
+if RAW_SECRET != WEBHOOK_SECRET:
+    logging.basicConfig(level=logging.INFO)
+    logging.getLogger("demon-shadow-bot").warning(
+        "WEBHOOK_SECRET contained invalid characters and was auto-sanitized. "
+        "Original: %r → Cleaned: %r",
+        RAW_SECRET, WEBHOOK_SECRET
+    )
+
 if not BASE_URL or BASE_URL == "https://your-service.onrender.com":
     raise RuntimeError(
         "RENDER_EXTERNAL_URL is not set AND FALLBACK_URL is not edited. "
@@ -171,13 +180,11 @@ RULES = [
 
 
 def choose_reply(message, count):
-    # The first and second incoming messages follow the user's requested flow.
     if count == 1:
         return INTRO_REPLY
     if count == 2:
         return BUSY_REPLY
 
-    # For later messages, use simple fixed keyword rules.
     text = (message.get("text") or message.get("caption") or "").strip().lower()
     if not text:
         return (
@@ -244,18 +251,15 @@ def webhook():
     update_id = update.get("update_id")
     message = update.get("business_message")
 
-    # Connection status updates are not messages to reply to.
     if not message:
         return jsonify(ok=True), 200
 
     chat = message.get("chat") or {}
     connection_id = message.get("business_connection_id")
 
-    # Secretary Mode is intended for private chats only.
     if chat.get("type") != "private" or not connection_id:
         return jsonify(ok=True), 200
 
-    # Do not answer messages sent by the account owner.
     if message.get("is_outgoing", False):
         return jsonify(ok=True), 200
 
@@ -263,7 +267,6 @@ def webhook():
     if chat_id is None or update_id is None:
         return jsonify(ok=True), 200
 
-    # Process text, captions, and non-text messages; don't answer empty text updates.
     is_new, count = record_update_and_count(update_id, chat_id)
     if not is_new:
         return jsonify(ok=True), 200
@@ -274,7 +277,6 @@ def webhook():
         send_business_reply(connection_id, chat_id, answer)
     except (requests.RequestException, RuntimeError):
         logger.exception("Reply failed for chat_id=%s", chat_id)
-        # Return success so Telegram doesn't repeatedly send the same update.
         return jsonify(ok=False, error="reply_failed"), 200
 
     return jsonify(ok=True), 200
