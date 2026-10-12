@@ -5,7 +5,8 @@ Python 3.11+ | Flask + Requests
 Required environment variables:
   BOT_TOKEN       BotFather token (keep secret)
   WEBHOOK_SECRET  Random secret containing only A-Z, a-z, 0-9, _ and -
-  RENDER_EXTERNAL_URL  Your Render service URL, e.g. https://your-service.onrender.com
+  RENDER_EXTERNAL_URL  (Optional) Your Render service URL
+                       If not set, FALLBACK_URL below is used.
 
 Run command on Render:
   gunicorn main:app
@@ -25,9 +26,15 @@ from flask import Flask, request, jsonify, abort
 
 # -------------------- Configuration --------------------
 
+# 👇 YAHAN APNA RENDER URL DAALO (fallback ke liye)
+FALLBACK_URL = "https://your-service.onrender.com"
+
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "").strip()
-BASE_URL = os.environ.get("RENDER_EXTERNAL_URL", "").strip().rstrip("/")
+BASE_URL = (
+    os.environ.get("RENDER_EXTERNAL_URL", "").strip().rstrip("/")
+    or FALLBACK_URL.strip().rstrip("/")
+)
 
 if not BOT_TOKEN:
     raise RuntimeError("Missing BOT_TOKEN environment variable.")
@@ -35,6 +42,11 @@ if not WEBHOOK_SECRET:
     raise RuntimeError("Missing WEBHOOK_SECRET environment variable.")
 if not re.fullmatch(r"[A-Za-z0-9_-]{1,256}", WEBHOOK_SECRET):
     raise RuntimeError("WEBHOOK_SECRET must use only letters, numbers, _ and -.")
+if not BASE_URL or BASE_URL == "https://your-service.onrender.com":
+    raise RuntimeError(
+        "RENDER_EXTERNAL_URL is not set AND FALLBACK_URL is not edited. "
+        "Set the env var OR edit FALLBACK_URL in the code."
+    )
 
 TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 DATABASE_PATH = os.environ.get("DATABASE_PATH", "/tmp/demon_shadow_bot.sqlite3")
@@ -268,7 +280,7 @@ def webhook():
     return jsonify(ok=True), 200
 
 
-# Register the webhook when Render starts the app.
+# Register the webhook when the app starts.
 if BASE_URL:
     try:
         result = telegram_post("setWebhook", {
@@ -276,11 +288,8 @@ if BASE_URL:
             "secret_token": WEBHOOK_SECRET,
             "allowed_updates": ["business_connection", "business_message"],
         })
-        logger.info("Telegram webhook configured: %s", result.get("ok"))
+        logger.info("Telegram webhook configured: %s (url=%s/webhook)", result.get("ok"), BASE_URL)
     except Exception:
-        logger.exception("Could not register webhook. Check Render environment variables.")
+        logger.exception("Could not register webhook. Check BOT_TOKEN and BASE_URL.")
 else:
-    logger.warning(
-        "RENDER_EXTERNAL_URL is not set; webhook registration skipped. "
-        "Set it in Render Environment Variables."
-    )
+    logger.warning("BASE_URL is empty; webhook registration skipped.")
