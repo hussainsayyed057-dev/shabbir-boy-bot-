@@ -8,7 +8,7 @@ Required environment variables:
   RENDER_EXTERNAL_URL  (Optional) Your Render service URL
                        If not set, FALLBACK_URL below is used.
 
-Run command on Render:
+Run command on Render: 
   gunicorn main:app
 
 This bot replies through a Telegram Business connection. It does not use an AI API.
